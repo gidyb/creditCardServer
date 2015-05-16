@@ -1,6 +1,6 @@
-# forterEx
+# Credit Card Server
 
-This repository includes the answers to the Forter credit card server home exercise
+This repository includes the Node.JS code for a credit card server which includes authentication (using nginx), input validation (using z-schema and luhn algorithm) and async storage (using redis)
 
 # Requirements
 
