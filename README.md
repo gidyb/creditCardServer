@@ -8,6 +8,7 @@ NodeJS required modules:
 
  - for basic exercise: express, uuid
  - for 1st bonus (async storage using redis) : redis, async
+ - for 2nd bonuse (schema and luhn validation): z-schema, luhn
 
 Other requirements:
   - Run redis process (for async storage) - *mandatory*
