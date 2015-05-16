@@ -3,6 +3,8 @@ var express = require('express');
 var uuid = require('uuid');
 var redis = require('redis');
 var async = require('async');
+var zschema = require('z-schema');
+var luhn = require('luhn').luhn;
 
 // Credit cards data
 var storage = {};
@@ -29,59 +31,60 @@ app.post('/creditcard', function(request,response) {
 
 	request.on('end', function () {
 
-		// Get card number from JSON
 		var cardNumberJson = JSON.parse(receivedData);
-		var cardNumber = cardNumberJson["credit-card"];
 
-		console.log("Request to save card with number = " + cardNumber);
+		// Validate input according to schema and luhn algorithm
+		if (isValidInput(cardNumberJson, response)){
 
-		var cardFound = false;
+			var cardNumber = cardNumberJson["credit-card"];
 
-		// Check if card already exists
-		redisClient.keys('*', function (err, keys) {
+			// Check if card already exists
+			var cardFound = false;
+			redisClient.keys('*', function (err, keys) {
 
-			if (err) return console.log(err);
+				if (err) return console.log(err);
 
-			async.each(keys,
+				async.each(keys,
 
-				// For each key
-				function(key, callback){
-					redisClient.get(key, function (err, reply) {
-						if (reply == cardNumber) {
-							cardFound = true;
+					// For each key
+					function (key, callback) {
+						redisClient.get(key, function (err, reply) {
+							if (reply == cardNumber) {
+								cardFound = true;
+							}
+							// Finished with this key
+							callback();
+						});
+					},
+
+					// When all keys are checked
+					function () {
+						if (cardFound) {
+							// It's a known credit card
+							console.log("Card already exists");
+							response.write("This card already exists!");
+							response.end();
 						}
-						// Finished with this key
-						callback();
-					});
-				},
+						else {
+							// It's a new credit card
 
-				// When all keys are checked
-				function(){
-					if (cardFound) {
-						// It's a known credit card
-						console.log("Card already exists");
-						response.write("This card already exists!");
+							// Compute a UUID for the card
+							var cardId = uuid.v4();
+
+							// Save card
+							console.log("Saving card with id = " + cardId);
+							redisClient.set(cardId, cardNumber);
+
+							// Build response
+							var responseJson = {};
+							responseJson.token = cardId;
+							response.write(JSON.stringify(responseJson));
+						}
+
 						response.end();
-					}
-					else{
-						// It's a new credit card
-
-						// Compute a UUID for the card
-						var cardId = uuid.v4();
-
-						// Save card
-						console.log("Saving card with id = " + cardId);
-						redisClient.set(cardId,cardNumber);
-
-						// Build response
-						var responseJson = {};
-						responseJson.token = cardId;
-						response.write(JSON.stringify(responseJson));
-					}
-
-					response.end();
-				});
-		});
+					});
+			});
+		}
 	});
 });
 
@@ -115,6 +118,47 @@ app.get('/creditcard/:id', function(request,response){
 		}
 	});
 });
+
+/*
+ * Validates given input according to JSON schema and luhn algorithm
+ */
+var isValidInput = function(receivedData, response){
+
+	var validator = new zschema();
+
+	var schema = {
+		type: "object",
+		properties: {
+			"credit-card": { type: "string" }
+		},
+		required: ["credit-card"]
+	};
+
+	// Validate JSon schema
+	if (!validator.validate(receivedData,schema)){
+		// Invalid schema
+		console.log("Invalid input: " + JSON.stringify(receivedData));
+		response.write("Invalid input. Usage: {'credit-card': <number> }");
+		response.end();
+		return false;
+	}
+	else {
+		// Schema is valid, check credit card number according to luhn
+		var cardNumber = receivedData["credit-card"];
+		console.log("Request to save card with number = " + cardNumber);
+
+		if (!luhn.validate(cardNumber)) {
+			// Non valid number
+			console.log("Invalid card number according to luhn algorithm: " + cardNumber);
+			response.write("Invalid card number according to luhn algorithm");
+			response.end();
+			return false;
+		}
+
+		// Everything is ok
+		return true;
+	}
+};
 
 app.listen(8081);
 
